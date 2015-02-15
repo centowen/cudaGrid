@@ -19,8 +19,6 @@ using std::fstream;
 const int N_STOKES = 2;
 const int THREADS = 128;
 const int BLOCKS = 128;
-const char pbfile[] = "ALMA-343.9GHz.pb";
-// const char pbfile = "VLA-1.4GHz.pb";
 const int chunk_size = 100000;
 const int MAX_PHASE_CENTRES = 100;
 
