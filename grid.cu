@@ -95,7 +95,7 @@ void setup_grid(DataGrid& data_grid, int nx, int ny, float cell);
 void setup_dev(DataGrid& data_grid, DataGrid& dev_data_grid,
 		            DataIO* dataio, float x0, float y0);
 
-int read_data_from_disk(DataIO* data, Chunk& chunk);
+int read_data_from_disk(DataIO* data, Chunk& chunk, clock_t& read_time);
 void copy_data_to_cuda(DataContainer& data, Chunk& chunk);
 void copy_grid_from_cuda(DataGrid& data_grid, DataGrid& dev_data_grid);
 void normalize_grid(DataGrid& data_grid, const int mode);
@@ -178,6 +178,7 @@ __global__ void cudaGrid(DataContainer data, int chunk_size, int nchan,/*{{{*/
 		{
 // 			u_index = int(data.u[uvrow]*freq[chanID]/c*data_grid.cell*data_grid.nx+data_grid.nx/2.);
 // 			v_index = int(data.v[uvrow]*freq[chanID]/c*data_grid.cell*data_grid.ny+data_grid.ny/2.);
+// 			u_index = int(-data.u[uvrow]*freq[chanID]/c*data_grid.cell/0.8859001628962232*data_grid.nx+data_grid.nx/2.+0.5);
 			u_index = int(-data.u[uvrow]*freq[chanID]/c*data_grid.cell*data_grid.nx+data_grid.nx/2.+0.5);
 			v_index = int(data.v[uvrow]*freq[chanID]/c*data_grid.cell*data_grid.ny+data_grid.ny/2.+0.5);
 
@@ -252,14 +253,19 @@ void grid(const string& vis, DataGrid& data_grid,/*{{{*/
 	DataContainer data;
 	DataGrid dev_data_grid;
 	Chunk chunk(chunk_size);
+	clock_t read_time = 0, gpu_time = 0, start, stop;
 
 	setup(dataio, vis.c_str(), data, dev_data_grid, data_grid, x0, y0);
 
-	while(read_data_from_disk( dataio,  chunk) > 0)
+	while(read_data_from_disk( dataio,  chunk, read_time) > 0)
 	{
 		copy_data_to_cuda(data, chunk);
+		start = clock();
 		cudaGrid<<<BLOCKS,THREADS>>>(data, chunk.size(), dataio->nChan(), dev_data_grid, dataio->nPointings());
 		CudaCheckError();
+		cudaThreadSynchronize();
+		stop = clock();
+		gpu_time += stop-start;
 		cout << "*" << std::flush;
 	}
 	cout << endl;
@@ -269,6 +275,9 @@ void grid(const string& vis, DataGrid& data_grid,/*{{{*/
 
 	normalize_grid(data_grid, mode);
 	cout << "Done normalizing data." << endl;
+
+	cout << "Time used to read data: " << (float)read_time / (float)CLOCKS_PER_SEC << endl;
+	cout << "Time used in GPU: " << (float)gpu_time / (float)CLOCKS_PER_SEC << endl;
 
 
 // 	cout.precision(10);
@@ -382,9 +391,10 @@ void setup_dev(DataGrid& data_grid, DataGrid& dev_data_grid, DataIO* dataio, flo
 		dx = fmod(dx, 2*M_PI);
 		host_field_omega_u[i] = 2*M_PI*dx/c;
 		host_field_omega_v[i] = 2*M_PI*dy/c;
-		host_field_omega_w[i] = 2*M_PI*(sqrt(1-dx*dx+dy*dy)-1)/c;
+		host_field_omega_w[i] = 2*M_PI*(sqrt(1-dx*dx-dy*dy)-1)/c;
 		if(i == 0)
 		{
+			cout.precision(20);
 			cout << "(x0, y0) = " << x0 << ", " << y0 << endl;
 			cout << "phase centre: " << dataio->xPhaseCentre(i) << ", " << dataio->yPhaseCentre(i) << endl;
 			cout << "(dx, dy) = " << dx*180*3600/M_PI << ", " << dy*180*3600/M_PI << endl;
@@ -407,9 +417,15 @@ void setup_dev(DataGrid& data_grid, DataGrid& dev_data_grid, DataIO* dataio, flo
 	delete[] host_field_omega_w;
 }/*}}}*/
 
-int read_data_from_disk(DataIO* data, Chunk& chunk)/*{{{*/
+int read_data_from_disk(DataIO* data, Chunk& chunk, clock_t& read_time)/*{{{*/
 {
-	int nrow = data->readChunk(chunk);
+	clock_t start, stop;
+	int nrow;
+
+	start = clock();
+	nrow = data->readChunk(chunk);
+	stop = clock();
+	read_time += stop-start;
 	return nrow;
 }/*}}}*/
 void copy_data_to_cuda(DataContainer& data, Chunk& chunk)/*{{{*/
