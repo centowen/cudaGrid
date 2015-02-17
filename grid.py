@@ -1,3 +1,4 @@
+from __future__ import division
 from ctypes import cdll, c_double, c_float, c_int, c_char_p, POINTER
 import numpy as np
 from math import pi
@@ -10,11 +11,13 @@ from numpyctypes import c_ndarray
 def main():
     print(os.path.join(__path__[0], 'libgrid.so'))
     lib = cdll.LoadLibrary(os.path.join(__path__[0], 'libgrid.so'))
-    N = 64
+    N = 256
     arcsec = 1./180/3600*pi
-    cell = 0.2*arcsec
-    x0 = 0.
-    y0 = 0.
+    cell = 0.5*arcsec
+    x0 = 0.928122246
+    y0 = -27.638/180*pi
+#     x0 = 2*arcsec
+#     x0 = 1.
     grid = lib.c_grid
     grid.restype = None
 #     grid.argtype = [c_char_p, POINTER(c_double), POINTER(c_double), POINTER(c_double), c_int, c_double, c_int]
@@ -30,8 +33,10 @@ def main():
     c_weight   = c_ndarray(weight, dtype=np.double, ndim=2)
     c_pb       = c_ndarray(pb, dtype=np.double, ndim=3)
 
-    grid(c_char_p(b'/data/aless_drg.ms'), c_vis_real, c_vis_imag, c_weight, 
-            c_pb, c_double(cell), c_float(x0), c_float(y0), c_int(0))
+    grid(c_char_p(b'/data/ecdfs_raw_sorted.ms'), c_vis_real, c_vis_imag, c_weight, 
+            c_pb, c_double(cell), c_float(x0), c_float(y0), c_int(1))
+#     grid(c_char_p(b'/data/aless_drg.ms'), c_vis_real, c_vis_imag, c_weight, 
+#             c_pb, c_double(cell), c_float(x0), c_float(y0), c_int(0))
 
 #     pl.ion()
 # pl.imshow(np.real(vis).transpose(), interpolation='nearest', origin='lower')
