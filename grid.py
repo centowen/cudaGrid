@@ -23,14 +23,14 @@ def main():
 #     grid.argtype = [c_char_p, POINTER(c_double), POINTER(c_double), POINTER(c_double), c_int, c_double, c_int]
 
 
-    vis_real = np.zeros((N,N))
-    vis_imag = np.zeros((N,N))
-    weight   = np.zeros((N,N))
-    pb       = np.zeros((1,N,N))
+    vis_real = np.zeros((6,N,N))
+    vis_imag = np.zeros((6,N,N))
+    weight   = np.zeros((6,N,N))
+    pb       = np.zeros((6,N,N))
 
-    c_vis_real = c_ndarray(vis_real, dtype=np.double, ndim=2)
-    c_vis_imag = c_ndarray(vis_imag, dtype=np.double, ndim=2)
-    c_weight   = c_ndarray(weight, dtype=np.double, ndim=2)
+    c_vis_real = c_ndarray(vis_real, dtype=np.double, ndim=3)
+    c_vis_imag = c_ndarray(vis_imag, dtype=np.double, ndim=3)
+    c_weight   = c_ndarray(weight, dtype=np.double, ndim=3)
     c_pb       = c_ndarray(pb, dtype=np.double, ndim=3)
 
     grid(c_char_p(b'/data/ecdfs_raw_sorted.ms'), c_vis_real, c_vis_imag, c_weight, 
@@ -41,12 +41,12 @@ def main():
 #     pl.ion()
 # pl.imshow(np.real(vis).transpose(), interpolation='nearest', origin='lower')
     vis = vis_real+1j*vis_imag
-    pl.clf()
-    pl.imshow(weight.transpose(), interpolation='nearest', origin='lower')
+#     pl.clf()
 #     pl.imshow(weight.transpose(), interpolation='nearest', origin='lower')
-    pl.colorbar()
-    pl.savefig('test.png')
-    pl.show()
+#     pl.imshow(weight.transpose(), interpolation='nearest', origin='lower')
+#     pl.colorbar()
+#     pl.savefig('test.png')
+#     pl.show()
 
     np.save('data.npy', vis)
     np.save('weight.npy', weight)

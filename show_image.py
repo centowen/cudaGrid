@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 from scipy.fftpack import fft2, ifft2, fftshift
 from matplotlib import pylab as pl
@@ -17,8 +18,8 @@ from matplotlib import pylab as pl
 
 data = np.array([])
 weight = np.array([])
-data = np.load('data.npy')
-weight = np.load('weight.npy')
+data = np.load('data.npy')[sys.argv[1],:,:]
+weight = np.load('weight.npy')[sys.argv[1],:,:]
     
 # pl.ion()
 
