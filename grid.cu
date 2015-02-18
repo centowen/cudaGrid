@@ -47,7 +47,8 @@ typedef struct _DataGrid/*{{{*/
 	float* vis_imag;
 	float* weight;
 	float cell;
-	int nx, ny;
+	size_t nx, ny;
+	size_t nfields;
 } DataGrid;/*}}}*/
 
 // Function declarations./*{{{*/
@@ -55,9 +56,9 @@ __global__ void cudaGrid(DataContainer data, int chunk_size,
                          int nchan, DataGrid data_grid);
 void grid(const string& vis, DataGrid& data_grid, int mode, float x0, float y0);
 void grid_to_numpy_containers(const char* vis,
-                              Ndarray<double, 2> vis_real,
-                              Ndarray<double, 2> vis_imag,
-                              Ndarray<double, 2> weight,
+                              Ndarray<double, 3> vis_real,
+                              Ndarray<double, 3> vis_imag,
+                              Ndarray<double, 3> weight,
                               Ndarray<double, 3> pb,
                               double cell, float x0, float y0,
 							  int mode);
@@ -73,9 +74,9 @@ void c_grid(const char* vis,
             const double cell, const float x0, const float y0, 
 			int mode = grid_mode_natural)
 {
-    Ndarray<double, 2> vis_real(c_vis_real);
-    Ndarray<double, 2> vis_imag(c_vis_imag);
-    Ndarray<double, 2> weight(c_weight);
+    Ndarray<double, 3> vis_real(c_vis_real);
+    Ndarray<double, 3> vis_imag(c_vis_imag);
+    Ndarray<double, 3> weight(c_weight);
     Ndarray<double, 3> pb(c_pb);
 
 	grid_to_numpy_containers(vis, vis_real, vis_imag, weight, pb, cell, x0, y0, mode);
@@ -91,7 +92,7 @@ void setup(DataIO*& dataio, string filein,
 		   DataGrid& dev_data_grid, DataGrid& data_grid,
 		   float x0, float y0);
 void setup_freq(DataContainer& data, DataIO* dataio);
-void setup_grid(DataGrid& data_grid, int nx, int ny, float cell);
+void setup_grid(DataGrid& data_grid, size_t nx, size_t ny, size_t nfields, float cell);
 void setup_dev(DataGrid& data_grid, DataGrid& dev_data_grid,
 		            DataIO* dataio, float x0, float y0);
 
@@ -152,13 +153,13 @@ int main(int argc, char* argv[])/*{{{*/
 		mode = grid_mode_natural;
 	}
 
-	setup_grid(data_grid, 64, 64, 4.84813681109536e-06*0.2);
+	setup_grid(data_grid, 64, 64, 1, 4.84813681109536e-06*0.2);
 	grid(vis, data_grid, mode, 0., 0.);
 	delete_grid(data_grid);
 }/*}}}*/
 
 __global__ void cudaGrid(DataContainer data, int chunk_size, int nchan,/*{{{*/
-                         DataGrid data_grid, int nfields)
+                         DataGrid data_grid)
 {
 	int uvrow = threadIdx.x+blockIdx.x*blockDim.x;
 	int grid_index, grid_index_inv;
@@ -171,7 +172,7 @@ __global__ void cudaGrid(DataContainer data, int chunk_size, int nchan,/*{{{*/
 	float phase_rot_real;
 	float phase_rot_imag;
 
-	while(uvrow < chunk_size && data.field[uvrow] == 0) // FIXME: Should check if field is being imaged.
+	while(uvrow < chunk_size && data.field[uvrow] < data_grid.nfields) // FIXME: Should check if field is being imaged.
 	{
 		float* freq = &data.freq[data.spw[uvrow]*nchan];
 		for(int chanID = 0; chanID < nchan; chanID++)
@@ -182,8 +183,10 @@ __global__ void cudaGrid(DataContainer data, int chunk_size, int nchan,/*{{{*/
 			u_index = int(-data.u[uvrow]*freq[chanID]/c*data_grid.cell*data_grid.nx+data_grid.nx/2.+0.5);
 			v_index = int(data.v[uvrow]*freq[chanID]/c*data_grid.cell*data_grid.ny+data_grid.ny/2.+0.5);
 
-			grid_index = u_index*data_grid.ny + v_index;
-			grid_index_inv = (data_grid.nx-u_index)*data_grid.ny + (data_grid.ny-v_index);
+// 			grid_index = u_index*data_grid.ny + v_index;
+// 			grid_index_inv = (data_grid.nx-u_index)*data_grid.ny + (data_grid.ny-v_index);
+			grid_index = data.field[uvrow]*data_grid.nx*data_grid.ny + u_index*data_grid.ny + v_index;
+			grid_index_inv = data.field[uvrow]*data_grid.nx*data_grid.ny + (data_grid.nx-u_index)*data_grid.ny + (data_grid.ny-v_index);
 
 			phase_rot_phi = -freq[chanID]*(data.u[uvrow]*(field_omega_u[data.field[uvrow]])+
 			                               data.v[uvrow]*(field_omega_v[data.field[uvrow]])+
@@ -261,7 +264,7 @@ void grid(const string& vis, DataGrid& data_grid,/*{{{*/
 	{
 		copy_data_to_cuda(data, chunk);
 		start = clock();
-		cudaGrid<<<BLOCKS,THREADS>>>(data, chunk.size(), dataio->nChan(), dev_data_grid, dataio->nPointings());
+		cudaGrid<<<BLOCKS,THREADS>>>(data, chunk.size(), dataio->nChan(), dev_data_grid);
 		CudaCheckError();
 		cudaThreadSynchronize();
 		stop = clock();
@@ -308,14 +311,16 @@ void reset_data_grid(DataGrid& data_grid)/*{{{*/
 	}
 }/*}}}*/
 
-void setup_grid(DataGrid& data_grid, int nx, int ny, float cell)/*{{{*/
+void setup_grid(DataGrid& data_grid, size_t nx, size_t ny,/*{{{*/
+		        size_t nfields, float cell)
 {
 	data_grid.nx = nx;
 	data_grid.ny = ny;
+	data_grid.nfields = nfields;
 	data_grid.cell = cell;
-	data_grid.vis_real = new float[nx*ny+1];
-	data_grid.vis_imag = new float[nx*ny+1];
-	data_grid.weight = new float[nx*ny+1];
+	data_grid.vis_real = new float[nx*ny*nfields+1];
+	data_grid.vis_imag = new float[nx*ny*nfields+1];
+	data_grid.weight = new float[nx*ny*nfields+1];
 	reset_data_grid(data_grid);
 }/*}}}*/
 
@@ -354,21 +359,25 @@ void setup_dev(DataGrid& data_grid, DataGrid& dev_data_grid, DataIO* dataio, flo
 {
 	dev_data_grid.nx = data_grid.nx;
 	dev_data_grid.ny = data_grid.ny;
+	dev_data_grid.nfields = data_grid.nfields;
 	dev_data_grid.cell = data_grid.cell;
+	cout << "nfields: " << data_grid.nfields << endl;
+	cout << "nfields: " << dev_data_grid.nfields << endl;
+	cout << "grid size is " << 3*sizeof(float)*(dev_data_grid.nx*dev_data_grid.ny*dev_data_grid.nfields+1)/1024./1024 << " MiB." << endl;
 	CudaSafeCall(cudaMalloc( (void**)&dev_data_grid.vis_real,
-	                         sizeof(float)*(dev_data_grid.nx*dev_data_grid.ny+1)));
+	                         sizeof(float)*(dev_data_grid.nx*dev_data_grid.ny*dev_data_grid.nfields+1)));
 	CudaSafeCall(cudaMalloc( (void**)&dev_data_grid.vis_imag,
-	                         sizeof(float)*(dev_data_grid.nx*dev_data_grid.ny+1)));
+	                         sizeof(float)*(dev_data_grid.nx*dev_data_grid.ny*dev_data_grid.nfields+1)));
 	CudaSafeCall(cudaMalloc( (void**)&dev_data_grid.weight,
-	                         sizeof(float)*(dev_data_grid.nx*dev_data_grid.ny+1)));
+	                         sizeof(float)*(dev_data_grid.nx*dev_data_grid.ny*dev_data_grid.nfields+1)));
 	CudaSafeCall(cudaMemcpy(dev_data_grid.vis_real, data_grid.vis_real,
-	                        sizeof(float)*(data_grid.nx*data_grid.ny+1),
+	                        sizeof(float)*(data_grid.nx*data_grid.ny*data_grid.nfields+1),
 	                        cudaMemcpyHostToDevice));
 	CudaSafeCall(cudaMemcpy(dev_data_grid.vis_imag, data_grid.vis_imag,
-	                        sizeof(float)*(data_grid.nx*data_grid.ny+1),
+	                        sizeof(float)*(data_grid.nx*data_grid.ny*data_grid.nfields+1),
 	                        cudaMemcpyHostToDevice));
 	CudaSafeCall(cudaMemcpy(dev_data_grid.weight, data_grid.weight,
-	                        sizeof(float)*(data_grid.nx*data_grid.ny+1),
+	                        sizeof(float)*(data_grid.nx*data_grid.ny*data_grid.nfields+1),
 	                        cudaMemcpyHostToDevice));
 
 	// Set up pointing information.
@@ -471,49 +480,58 @@ void copy_data_to_cuda(DataContainer& data, Chunk& chunk)/*{{{*/
 void copy_grid_from_cuda(DataGrid& data_grid, DataGrid& dev_data_grid)/*{{{*/
 {
 	CudaSafeCall(cudaMemcpy(data_grid.vis_real, dev_data_grid.vis_real,
-	                        sizeof(float)*(data_grid.nx*data_grid.ny+1),
+	                        sizeof(float)*(data_grid.nx*data_grid.ny*data_grid.nfields+1),
 	                        cudaMemcpyDeviceToHost));
 	CudaSafeCall(cudaMemcpy(data_grid.vis_imag, dev_data_grid.vis_imag,
-	                        sizeof(float)*(data_grid.nx*data_grid.ny+1),
+	                        sizeof(float)*(data_grid.nx*data_grid.ny*data_grid.nfields+1),
 	                        cudaMemcpyDeviceToHost));
 	CudaSafeCall(cudaMemcpy(data_grid.weight, dev_data_grid.weight,
-	                        sizeof(float)*(data_grid.nx*data_grid.ny+1),
+	                        sizeof(float)*(data_grid.nx*data_grid.ny*data_grid.nfields+1),
 	                        cudaMemcpyDeviceToHost));
 }/*}}}*/
 void normalize_grid(DataGrid& data_grid, const int mode)/*{{{*/
 {
 	if( mode == grid_mode_natural)
 	{
-		float sum_of_weights = 0.;
-		for(int i = 0; i < data_grid.nx*data_grid.ny; i++)
-				sum_of_weights += data_grid.weight[i];
-
-		for(int i = 0; i < data_grid.nx*data_grid.ny; i++)
+		float sum_of_weights;
+		for(int field = 0; field < data_grid.nfields; field++)
 		{
-			data_grid.vis_real[i] /= sum_of_weights;
-			data_grid.vis_imag[i] /= sum_of_weights;
-			data_grid.weight[i] /= sum_of_weights;
+			sum_of_weights = 0;
+			for(int i = 0; i < data_grid.nx*data_grid.ny; i++)
+					sum_of_weights += data_grid.weight[i+field*data_grid.nx*data_grid.ny];
+
+			for(int i = 0; i < data_grid.nx*data_grid.ny; i++)
+			{
+				data_grid.vis_real[i+field*data_grid.nx*data_grid.ny] /= sum_of_weights;
+				data_grid.vis_imag[i+field*data_grid.nx*data_grid.ny] /= sum_of_weights;
+				data_grid.weight[i+field*data_grid.nx*data_grid.ny] /= sum_of_weights;
+			}
 		}
 	}
 	else if( mode == grid_mode_uniform )
 	{
 		float sum_of_weights = 0.;
-		for(int i = 0; i < data_grid.nx*data_grid.ny; i++)
-		{
-			if(data_grid.weight[i] > 0)
-			{
-				data_grid.vis_real[i] /= data_grid.weight[i];
-				data_grid.vis_imag[i] /= data_grid.weight[i];
-				data_grid.weight[i] = 1.;
-				sum_of_weights += 1.;
-			}
-		}
 
-		for(int i = 0; i < data_grid.nx*data_grid.ny; i++)
+		for(int field = 0; field < data_grid.nfields; field++)
 		{
-			data_grid.vis_real[i] /= sum_of_weights;
-			data_grid.vis_imag[i] /= sum_of_weights;
-			data_grid.weight[i] /= sum_of_weights;
+			sum_of_weights = 0.;
+			for(int i = 0; i < data_grid.nx*data_grid.ny; i++)
+			{
+				if(data_grid.weight[i+field*data_grid.nx*data_grid.ny] > 0)
+				{
+					data_grid.vis_real[i+field*data_grid.nx*data_grid.ny] /= data_grid.weight[i+field*data_grid.nx*data_grid.ny];
+					data_grid.vis_imag[i+field*data_grid.nx*data_grid.ny] /= data_grid.weight[i+field*data_grid.nx*data_grid.ny];
+					data_grid.weight[i+field*data_grid.nx*data_grid.ny] = 1.;
+					sum_of_weights += 1.;
+				}
+			}
+
+			for(int i = 0; i < data_grid.nx*data_grid.ny; i++)
+			{
+				data_grid.vis_real[i+field*data_grid.nx*data_grid.ny] /= sum_of_weights;
+				data_grid.vis_imag[i+field*data_grid.nx*data_grid.ny] /= sum_of_weights;
+				data_grid.weight[i+field*data_grid.nx*data_grid.ny] /= sum_of_weights;
+			}
 		}
 	}
 }/*}}}*/
@@ -559,16 +577,16 @@ void free_cuda_data(DataContainer& data)/*{{{*/
 	CudaSafeCall(cudaFree( data.spw));
 }/*}}}*/
 void grid_to_numpy_containers(const char* vis, /*{{{*/
-                              Ndarray<double, 2> vis_real,
-                              Ndarray<double, 2> vis_imag,
-                              Ndarray<double, 2> weight,
+                              Ndarray<double, 3> vis_real,
+                              Ndarray<double, 3> vis_imag,
+                              Ndarray<double, 3> weight,
                               Ndarray<double, 3> pb,
                               double cell, float x0, float y0,
 							  int mode)
 {
 	DataGrid data_grid;
 
-	setup_grid(data_grid, vis_real.getShape(0), vis_real.getShape(1),
+	setup_grid(data_grid, vis_real.getShape(1), vis_real.getShape(2), vis_real.getShape(0),
 		       float(cell));
 
 	string vis_tmp(vis);
@@ -584,7 +602,7 @@ void grid_to_numpy_containers(const char* vis, /*{{{*/
 // 	cout << "V(35,30): " << data_grid.vis_real[35+30*64] << endl;
 // 	cout << "V(36,30): " << data_grid.vis_real[36+30*64] << endl;
 
-	int len = vis_real.getShape(0)*vis_real.getShape(1);
+	int len = vis_real.getShape(0)*vis_real.getShape(1)*vis_real.getShape(2);
 
     std::copy(data_grid.vis_real, &data_grid.vis_real[len], vis_real.begin());
     std::copy(data_grid.vis_imag, &data_grid.vis_imag[len], vis_imag.begin());
