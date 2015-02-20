@@ -54,7 +54,7 @@ typedef struct _DataGrid/*{{{*/
 // Function declarations./*{{{*/
 __global__ void cudaGrid(DataContainer data, int chunk_size,
                          int nchan, DataGrid data_grid);
-void grid(const string& vis, DataGrid& data_grid, int mode, float x0, float y0);
+void grid(DataIO* dataio, DataGrid& data_grid, int mode, float x0, float y0);
 void grid_to_numpy_containers(const char* vis,
                               Ndarray<double, 3> vis_real,
                               Ndarray<double, 3> vis_imag,
@@ -87,7 +87,7 @@ void allocate_cuda_data(DataContainer& data, DataGrid data_grid,
                         int nx, int ny, float cell, int nchan,
                         int nstokes, int chunk_size);
 
-void setup(DataIO*& dataio, string filein,
+void setup(DataIO* dataio, 
            DataContainer& dev_data,
 		   DataGrid& dev_data_grid, DataGrid& data_grid,
 		   float x0, float y0);
@@ -153,8 +153,9 @@ int main(int argc, char* argv[])/*{{{*/
 		mode = grid_mode_natural;
 	}
 
+	DataIO* dataio = (DataIO*)new msio(vis.c_str(), "", true);
 	setup_grid(data_grid, 64, 64, 1, 4.84813681109536e-06*0.2);
-	grid(vis, data_grid, mode, 0., 0.);
+	grid(dataio, data_grid, mode, 0., 0.);
 	delete_grid(data_grid);
 }/*}}}*/
 
@@ -249,16 +250,15 @@ __global__ void cudaGrid(DataContainer data, int chunk_size, int nchan,/*{{{*/
 		uvrow+=blockDim.x*gridDim.x; // Update the index of each thread by the number of threads launched simultaneosly (threads per block * number of blocks).
 	}
 }/*}}}*/
-void grid(const string& vis, DataGrid& data_grid,/*{{{*/
+void grid(DataIO *dataio, DataGrid& data_grid,/*{{{*/
           const int mode, float x0, float y0)
 {
-	DataIO* dataio;
 	DataContainer data;
 	DataGrid dev_data_grid;
 	Chunk chunk(chunk_size);
 	clock_t read_time = 0, gpu_time = 0, start, stop;
 
-	setup(dataio, vis.c_str(), data, dev_data_grid, data_grid, x0, y0);
+	setup(dataio, data, dev_data_grid, data_grid, x0, y0);
 
 	while(read_data_from_disk( dataio,  chunk, read_time) > 0)
 	{
@@ -324,13 +324,11 @@ void setup_grid(DataGrid& data_grid, size_t nx, size_t ny,/*{{{*/
 	reset_data_grid(data_grid);
 }/*}}}*/
 
-void setup(DataIO*& dataio, string filein, /*{{{*/
+void setup(DataIO* dataio, /*{{{*/
            DataContainer& dev_data,
 		   DataGrid& dev_data_grid, DataGrid& data_grid,
 		   float x0, float y0)
 {
-	dataio = (DataIO*)new msio(filein.c_str(), "", true);
-
 	allocate_cuda_data(dev_data, dataio->nChan(), N_STOKES, chunk_size);
 	setup_freq(dev_data, dataio);
 	setup_dev(data_grid, dev_data_grid, dataio, x0, y0);
@@ -397,7 +395,7 @@ void setup_dev(DataGrid& data_grid, DataGrid& dev_data_grid, DataIO* dataio, flo
 		float dy = sin(y0)*cos(dataio->yPhaseCentre(i)) -
 			       cos(y0)*sin(dataio->yPhaseCentre(i)) *
 				   cos(x0-dataio->xPhaseCentre(i));
-		dx = fmod(dx, 2*M_PI);
+		dx = fmod(dx, (float)(2*M_PI));
 		host_field_omega_u[i] = 2*M_PI*dx/c;
 		host_field_omega_v[i] = 2*M_PI*dy/c;
 		host_field_omega_w[i] = 2*M_PI*(sqrt(1-dx*dx-dy*dy)-1)/c;
@@ -585,13 +583,14 @@ void grid_to_numpy_containers(const char* vis, /*{{{*/
 							  int mode)
 {
 	DataGrid data_grid;
+	DataIO* dataio = (DataIO*)new msio(vis, "", true);
 
 	setup_grid(data_grid, vis_real.getShape(1), vis_real.getShape(2), vis_real.getShape(0),
 		       float(cell));
 
-	string vis_tmp(vis);
 // 	grid((string)vis, data_grid, mode);
-	grid(vis_tmp, data_grid, mode, x0, y0);
+	grid(dataio, data_grid, mode, x0, y0);
+
 // 	cout.precision(30);
 // 	cout << "V(29,30): " << data_grid.vis_real[29+30*64] << endl;
 // 	cout << "V(30,30): " << data_grid.vis_real[30+30*64] << endl;

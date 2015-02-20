@@ -14,8 +14,11 @@ def main():
     N = 256
     arcsec = 1./180/3600*pi
     cell = 0.5*arcsec
-    x0 = 0.928122246
-    y0 = -27.638/180*pi
+#     x0 = 0.928122246
+#     y0 = -27.638/180*pi
+
+    x0 = 0.9301306097278084
+    y0 = -0.4854060361613893
 #     x0 = 2*arcsec
 #     x0 = 1.
     grid = lib.c_grid
@@ -33,7 +36,9 @@ def main():
     c_weight   = c_ndarray(weight, dtype=np.double, ndim=3)
     c_pb       = c_ndarray(pb, dtype=np.double, ndim=3)
 
-    grid(c_char_p(b'/data/ecdfs_raw_sorted.ms'), c_vis_real, c_vis_imag, c_weight, 
+#     grid(c_char_p(b'/data/lindroos/ecdfs_selfcal.ms'), c_vis_real, c_vis_imag, c_weight, 
+#             c_pb, c_double(cell), c_float(x0), c_float(y0), c_int(1))
+    grid(c_char_p(b'/data/lindroos/ecdfs_raw_sorted.ms'), c_vis_real, c_vis_imag, c_weight, 
             c_pb, c_double(cell), c_float(x0), c_float(y0), c_int(1))
 #     grid(c_char_p(b'/data/aless_drg.ms'), c_vis_real, c_vis_imag, c_weight, 
 #             c_pb, c_double(cell), c_float(x0), c_float(y0), c_int(0))
