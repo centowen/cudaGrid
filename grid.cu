@@ -17,8 +17,8 @@ using std::fstream;
 
 // Definitions of constants./*{{{*/
 const int N_STOKES = 2;
-const int THREADS = 128;
-const int BLOCKS = 128;
+// const int THREADS = 128;
+// const int BLOCKS = 128;
 const int chunk_size = 100000;
 const int MAX_PHASE_CENTRES = 100;
 
@@ -153,7 +153,7 @@ int main(int argc, char* argv[])/*{{{*/
 		mode = grid_mode_natural;
 	}
 
-	DataIO* dataio = (DataIO*)new msio(vis.c_str(), "", true);
+	DataIO* dataio = (DataIO*)new msio(vis.c_str(), "", false);
 	setup_grid(data_grid, 64, 64, 1, 4.84813681109536e-06*0.2);
 	grid(dataio, data_grid, mode, 0., 0.);
 	delete_grid(data_grid);
@@ -583,7 +583,7 @@ void grid_to_numpy_containers(const char* vis, /*{{{*/
 							  int mode)
 {
 	DataGrid data_grid;
-	DataIO* dataio = (DataIO*)new msio(vis, "", true);
+	DataIO* dataio = (DataIO*)new msio(vis, "", false);
 
 	setup_grid(data_grid, vis_real.getShape(1), vis_real.getShape(2), vis_real.getShape(0),
 		       float(cell));
